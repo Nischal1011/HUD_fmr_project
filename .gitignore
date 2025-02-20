@@ -3,3 +3,5 @@ data
 .venv
 .csv
 .json
+.env
+Wrapper/__pycache__
