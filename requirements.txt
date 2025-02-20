@@ -1,0 +1,15 @@
+pandas
+requests
+beautifulsoup4
+lxml
+selenium
+openpyxl
+xlrd
+geopandas
+gradio
+matplotlib
+seaborn
+plotly
+shapely
+fuzzywuzzy
+python-Levenshtein
