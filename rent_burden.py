@@ -44,8 +44,6 @@ if __name__ == "__main__":
     # Ensure numeric columns are properly typed (convert from string if needed)
     numeric_columns = list(variables.values())  # All variables except geographic ones
     df[numeric_columns] = df[numeric_columns].apply(pd.to_numeric, errors="coerce")
-
-    # Display sample of the DataFrame
-    print("Sample of DataFrame with mapped column names:")
-    print(df.head())
+    df["GEOID"] = df["state_fips"] + df["county_fips"]
+    df.to_csv("data/census_county_data.csv", index=False)
 
