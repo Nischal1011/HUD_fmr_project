@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 
 # Step 1: Fetch and Process Census ACS Data
@@ -10,7 +11,10 @@ def get_census_data(census_file_path="data/census_county_data.csv"):
     
     # Ensure GEOID is string and zero-padded
     df_census["GEOID"] = df_census["GEOID"].astype(str).str.zfill(5)
-    
+
+    # df_census['median_gross_rent'] = np.where(df_census['median_gross_rent']>0, np.nan, df_census   ['median_gross_rent'] )
+    df_census['median_gross_rent'] = np.where(df_census['median_gross_rent']<0, np.nan, df_census['median_gross_rent'] )
+    df_census['median_household_income'] = np.where(df_census['median_household_income']<0, np.nan, df_census['median_household_income'] )
     return df_census
 
 # Step 2: Load FMR Data
@@ -42,7 +46,7 @@ def integrate_data(df_census, df_fmr):
         df_integrated[f"rent_to_income_ratio_{beds}"] = (
             (df_integrated[f"fmr_{beds}"] * 12) / df_integrated["median_household_income"]
         ) * 100
-
+        df_integrated['median_gross_rent'] = np.where(df_integrated[f'fmr_{beds}']==0, np.nan, df_integrated['median_gross_rent'] )
     # Percentage of Cost-Burdened Renters (>30% of income)
     cost_burdened_cols = ["rent_30_to_34_9_percent", "rent_35_to_39_9_percent", 
                           "rent_40_to_49_9_percent", "rent_50_percent_or_more"]
@@ -60,21 +64,31 @@ def integrate_data(df_census, df_fmr):
         df_integrated[f"fmr_vs_median_rent_diff_{beds}"] = (
             df_integrated[f"fmr_{beds}"] - df_integrated["median_gross_rent"]
         )
+        df_integrated[f"fmr_vs_median_rent_percent_{beds}"] = np.where(
+     (df_integrated["median_gross_rent"] != 0) & (df_integrated["fmr_1"] != 0),
+     ((df_integrated[f"fmr_{beds}"] - df_integrated["median_gross_rent"]) / df_integrated["median_gross_rent"]) * 100,
+     np.nan  # Ensures that fmr_1 = 0 does not produce -100
+ )
+
+    
 
     # Affordability Gap: Excess rent over 30% threshold for all bedrooms
     for beds in range(5):
         df_integrated[f"affordability_gap_{beds}"] = (
             (df_integrated[f"fmr_{beds}"] * 12) - (df_integrated["median_household_income"] * 0.3)
         ).apply(lambda x: max(x, 0))  # Only positive gaps
-
+        df_integrated[f'affordability_gap_{beds}'] = np.where(df_integrated[f'affordability_gap_{beds}']==0,np.nan, df_integrated[f'affordability_gap_{beds}'])
+    min_wage_df = pd.read_csv("data/minimum_wage_by_state.csv")
+    df_integrated = min_wage_df[['min_wage', 'state_fips']].merge(df_integrated, on = 'state_fips', how = 'right')
     # Voucher Feasibility: % of FMR above median rent for all bedrooms
     for beds in range(5):
         df_integrated[f"voucher_feasibility_{beds}"] = (
             df_integrated[f"fmr_{beds}"] / df_integrated["median_gross_rent"]
         ).replace([float('inf'), -float('inf')], 0) * 100
 
-    # **NEW METRIC: Housing Wage (Hourly Wage Needed to Afford FMR)**
-    df_integrated["housing_wage_2"] = (df_integrated["fmr_2"] * 12) / 2080  # Assuming 40 hours/week, 52 weeks
+        
+        df_integrated[f"housing_wage_{beds}"] = (df_integrated[f"fmr_{beds}"] * 12) / 2080  # Assuming 40 hours/week, 52 weeks
+        df_integrated[f"housing_wage_to_min_wage_{beds}"] = df_integrated[f"housing_wage_{beds}"] / df_integrated["min_wage"] * 100
 
     return df_integrated
 

@@ -1,86 +1,69 @@
-# Fair Market Rent Analysis Dashboard
+# Fair Market Rent Map Visualization
 
-An interactive dashboard to visualize and analyze HUD Fair Market Rent (FMR) data across U.S. counties. This project combines data from HUD, Zillow, and geographic sources to provide insights into rental markets.
+A Python-based visualization tool for analyzing Fair Market Rent (FMR) data across U.S. counties. This project combines census data with FMR statistics to create interactive geographic visualizations.
 
 ## Features
 
-- Interactive choropleth map showing FMR distribution across U.S. counties
-- Filtering by unit size (0-4 bedrooms)
-- Key market statistics including:
-  - Average rent
-  - Median rent
-  - Minimum/Maximum rents with county names
-  - Standard deviation
-  - Quartile values
-- County-level detail on hover
-- Responsive design
+- Interactive county-level map visualizations
+- Fair Market Rent analysis for different bedroom types (0-4 bedrooms)
+- Multiple metric visualizations including:
+  - Rent-to-income ratios
+  - FMR vs median rent differences
+  - Affordability gaps
+  - Voucher feasibility
+  - Housing wage analysis
+- Comprehensive statistics including mean, median, min/max, and distribution metrics
+- County-specific data lookup
+
+## Technical Requirements
+
+- Python 3.x
+- Required packages:
+  - pandas
+  - geopandas
+  - requests
+  - (Additional dependencies should be listed in requirements.txt)
 
 ## Data Sources
 
-- HUD Fair Market Rent data (FY 2025)
-- Zillow rental price data
-- U.S. Census Bureau geographic data (TIGER/Line shapefiles)
+- U.S. Census Bureau ACS 5-year estimates (2023)
+- County-level Fair Market Rent data (stored in `data/census_fmr_county.csv`)
 
-## Installation
+## Setup
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/fair-market-rent-analysis.git
-```
-
-2. Install required packages:
-```bash
-pip install -r requirements.txt
-```
-
-## Project Structure
-
-- `fmr_map_viz.py` - Main dashboard application using Gradio
-- `county_geo_id.py` - Geographic data processing utilities
-- `zillow_HUD_rent_compare.py` - Data preparation and comparison logic
-- `data/` - Directory containing source data files
+1. Obtain a Census API key from [api.census.gov](https://api.census.gov)
+2. Install required dependencies
+3. Ensure the geographic data file is present in the `data` directory
 
 ## Usage
 
-1. Run the dashboard:
-```bash
-python fmr_map_viz.py
+The application provides several key functions:
+
+```python
+# Load and analyze FMR data
+gdf, geo_interface = load_data()
+
+# Get statistics for specific bedroom types
+stats = get_stats("2 Bedroom")  # Returns comprehensive statistics
+
+# Create visualizations
+map_data = create_map(bedroom_type, metric_type)
 ```
 
-2. Access the dashboard in your browser at `http://localhost:2000`
+## Data Structure
 
-## Data Processing
+The system works with multiple metrics for each county:
+- Fair Market Rent (FMR) for 0-4 bedrooms
+- Rent-to-income ratios
+- FMR vs median rent differences
+- Affordability gaps
+- Cost burden percentages
+- Housing wage calculations
 
-The project processes data in several steps:
+## API Integration
 
-1. Loads and cleans HUD FMR data
-2. Processes Zillow rental data for comparison
-3. Matches geographic identifiers
-4. Generates county-level visualizations
-
-## Dependencies
-
-- Gradio
-- GeoPandas
-- Pandas
-- Plotly
-- FuzzyWuzzy
-- NumPy
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-MIT
-
-## Acknowledgments
-
-- U.S. Department of Housing and Urban Development
-- Zillow Research
-- U.S. Census Bureau
+The project includes a Census API wrapper that supports:
+- County-level data retrieval
+- State-specific filtering
+- ZIP code data access
+- Automated error handling and response processing
