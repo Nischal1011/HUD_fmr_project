@@ -5,3 +5,4 @@ data
 .json
 .env
 Wrapper/__pycache__
+.DS_Store

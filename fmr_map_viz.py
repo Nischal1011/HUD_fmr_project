@@ -30,7 +30,74 @@ def load_data():
     
     return gdf, gdf.__geo_interface__
 
-@functools.lru_cache(maxsize=5)
+METRIC_INFO = {
+    'FMR': {
+        'format': '${:.2f}',
+        'description': 'Fair Market Rent set by HUD (Neutral - context dependent)',
+        'prefix': '$'
+    },
+    'Rent-to-Income Ratio': {
+        'format': '{:.1f}%',
+        'description': 'Annual FMR as % of median income (Lower is better - less burden)',
+        'prefix': ''
+    },
+    'FMR vs Median Rent Difference': {
+        'format': '${:.2f}',
+        'description': 'Dollar difference between FMR and median rent (Higher is better - FMR exceeds market rent)',
+        'prefix': '$'
+    },
+    'FMR Deviation (%)': {
+        'format': '{:.1f}%',
+        'description': 'Percentage difference FMR vs median rent (Higher is better - FMR exceeds market rent)',
+        'prefix': ''
+    },
+    'Affordability Gap': {
+        'format': '${:.2f}',
+        'description': 'Excess rent over 30% income (Lower is better - less unaffordable)',
+        'prefix': '$'
+    },
+    'Voucher Feasibility': {
+        'format': '{:.1f}%',
+        'description': 'FMR as % of median rent (Higher is better - better coverage)',
+        'prefix': ''
+    },
+    'Cost Burden': {
+        'format': '{:.1f}%',
+        'description': 'Renters spending >30% on rent (Lower is better - fewer burdened households)',
+        'prefix': ''
+    },
+    'Severe Cost Burden': {
+        'format': '{:.1f}%',
+        'description': 'Renters spending >50% on rent (Lower is better - fewer severely burdened households)',
+        'prefix': ''
+    },
+    'Housing Wage': {
+        'format': '${:.2f}/hr',
+        'description': 'Hourly wage needed for FMR (Lower is better - more affordable)',
+        'prefix': '$'
+    }
+}
+
+METRIC_DIRECTION = {
+    'FMR': 'neutral',
+    'Rent-to-Income Ratio': 'lower',
+    'Affordability Gap': 'lower',
+    'Cost Burden': 'lower',
+    'Severe Cost Burden': 'lower',
+    'Housing Wage': 'lower',
+    'FMR vs Median Rent Difference': 'higher',
+    'FMR Deviation (%)': 'higher',
+    'Voucher Feasibility': 'higher'
+}
+
+PERCENTAGE_METRICS = {
+    'Rent-to-Income Ratio',
+    'FMR Deviation (%)',
+    'Voucher Feasibility',
+    'Cost Burden',
+    'Severe Cost Burden'
+}
+
 def create_map(bedroom_type, metric_type):
     """Generate interactive choropleth map"""
     gdf, geojson = load_data()
@@ -40,7 +107,7 @@ def create_map(bedroom_type, metric_type):
         'FMR': f'fmr_{bedroom_num}',
         'Rent-to-Income Ratio': f'rent_to_income_ratio_{bedroom_num}',
         'FMR vs Median Rent Difference': f'fmr_vs_median_rent_diff_{bedroom_num}',
-        'FMR Deviation from Median Rent (%)': f'fmr_vs_median_rent_percent_{bedroom_num}',
+        'FMR Deviation (%)': f'fmr_vs_median_rent_percent_{bedroom_num}',
         'Affordability Gap': f'affordability_gap_{bedroom_num}',
         'Voucher Feasibility': f'voucher_feasibility_{bedroom_num}',
         'Cost Burden': 'pct_cost_burdened',
@@ -49,20 +116,8 @@ def create_map(bedroom_type, metric_type):
     }
     
     metric_col = metric_mapping[metric_type]
-    
-    if metric_type == 'FMR':
-        format_str = '${:.2f}'
-        prefix = '$'
-    elif metric_type in ['Rent-to-Income Ratio', 'Cost Burden', 'Severe Cost Burden', 
-                         'Voucher Feasibility', 'FMR Deviation from Median Rent (%)']:
-        format_str = '{:.1f}%'
-        prefix = ''
-    elif metric_type == 'Housing Wage':
-        format_str = '${:.2f}/hr'
-        prefix = '$'
-    else:
-        format_str = '${:.2f}'
-        prefix = '$'
+    format_str = METRIC_INFO[metric_type]['format']
+    prefix = METRIC_INFO[metric_type]['prefix']
     
     gdf['hover_text'] = gdf.apply(
         lambda x: f"<b>{x['county_name']}</b><br>"
@@ -71,54 +126,67 @@ def create_map(bedroom_type, metric_type):
         axis=1
     )
 
+    if metric_type in PERCENTAGE_METRICS:
+        z = gdf[metric_col] * 100
+        tickprefix = ''
+        ticksuffix = '%'
+        tickformat = '.1f'
+    else:
+        z = gdf[metric_col]
+        tickprefix = '$'
+        ticksuffix = ''
+        tickformat = ',.0f'
+
+    # Use 'Viridis' for a lighter, more legible heatmap (uniform and clear color transition)
+    colorscale = 'Viridis'
+
+    # Conditionally set the colorbar title: show only metric_type for FMR, include description for others
+    colorbar_title_text = f"{metric_type}"
+    if metric_type != 'FMR':
+        colorbar_title_text += f"<br><br>{METRIC_INFO[metric_type]['description']}"
+
     fig = go.Figure(go.Choropleth(
         geojson=geojson,
         locations=gdf['GEOID'],
-        z=gdf[metric_col],
+        z=z,
         featureidkey="properties.GEOID",
-        colorscale='RdYlBu_r',
+        colorscale=colorscale,
         marker_line_width=0.5,
         marker_line_color='white',
         hoverinfo="text",
         hovertext=gdf['hover_text'],
         colorbar=dict(
-            title=dict(text=metric_type, font=dict(size=14)),
-            thickness=20,
+            title=dict(
+                text=colorbar_title_text,  # Use the conditionally built title
+                font=dict(size=14),
+                side='right'
+            ),
+            thickness=15,
             len=0.75,
             tickfont=dict(size=12),
-            tickformat=f"{prefix},.0f" if 'FMR' in metric_type else ".1f"
+            tickprefix=tickprefix,
+            ticksuffix=ticksuffix,
+            tickformat=tickformat
         )
     ))
 
     fig.update_layout(
-        height=700,
-        width=1200,
-        margin=dict(r=20, t=40, l=20, b=20),
+        height=600,
+        margin=dict(r=0, t=30, l=0, b=0),
         geo=dict(
             scope='usa',
             projection=dict(type='albers usa'),
             showlakes=True,
-            lakecolor='#e6f3f8',
-            landcolor='#f9fafb',
-            bgcolor='rgba(255,255,255,1)',
-            center=dict(lat=39.8283, lon=-98.5795),
-            lonaxis=dict(range=[-130, -65]),
-            lataxis=dict(range=[20, 50]),
+            lakecolor='#e0f2fe',  # Lighter lake color for better contrast
+            landcolor='#f0f4f8',  # Lighter land color for better legibility
+            bgcolor='rgba(240, 244, 248, 0.9)'  # Lighter background for the map
         ),
-        hoverlabel=dict(
-            bgcolor="white",
-            font_size=14,
-            font_family="Arial"
+        font=dict(
+            family="Inter",
+            color="#333333"  # Darker text for contrast on lighter background
         ),
-        font=dict(family="Inter", size=12),
-        title={
-            'text': f"{metric_type} Distribution - {bedroom_type} Units",
-            'y': 0.95,
-            'x': 0.5,
-            'xanchor': 'center',
-            'yanchor': 'top',
-            'font': dict(size=20, family='Inter')
-        }
+        paper_bgcolor='rgba(240, 244, 248, 0.9)',  # Lighter background for the entire plot
+        plot_bgcolor='rgba(240, 244, 248, 0.9)'  # Lighter plot background
     )
 
     return fig
@@ -132,7 +200,7 @@ def get_stats(bedroom_type, metric_type):
         'FMR': f'fmr_{bedroom_num}',
         'Rent-to-Income Ratio': f'rent_to_income_ratio_{bedroom_num}',
         'FMR vs Median Rent Difference': f'fmr_vs_median_rent_diff_{bedroom_num}',
-        'FMR Deviation from Median Rent (%)': f'fmr_vs_median_rent_percent_{bedroom_num}',
+        'FMR Deviation (%)': f'fmr_vs_median_rent_percent_{bedroom_num}',
         'Affordability Gap': f'affordability_gap_{bedroom_num}',
         'Voucher Feasibility': f'voucher_feasibility_{bedroom_num}',
         'Cost Burden': 'pct_cost_burdened',
@@ -142,285 +210,168 @@ def get_stats(bedroom_type, metric_type):
     
     metric_col = metric_mapping[metric_type]
     gdf = gdf.dropna(subset=[metric_col])
+    format_str = METRIC_INFO[metric_type]['format']
     
-    if metric_type in ['FMR', 'Affordability Gap']:
-        format_str = '${:.2f}'
-    elif metric_type == 'Housing Wage':
-        format_str = '${:.2f}/hr'
-    else:
-        format_str = '{:.1f}%'
-    
-    return (
-        format_str.format(gdf[metric_col].mean()),
-        format_str.format(gdf[metric_col].median()),
-        f"{format_str.format(gdf[metric_col].min())} ({gdf.loc[gdf[metric_col].idxmin(), 'county_name']})",
-        f"{format_str.format(gdf[metric_col].max())} ({gdf.loc[gdf[metric_col].idxmax(), 'county_name']})",
-        f"{len(gdf):,}",
-        format_str.format(gdf[metric_col].std()),
-        format_str.format(gdf[metric_col].quantile(0.25)),
-        format_str.format(gdf[metric_col].quantile(0.75))
-    )
+    return [
+        format_str.format(val) if isinstance(val, float) else val
+        for val in [
+            gdf[metric_col].mean(),
+            gdf[metric_col].median(),
+            gdf[metric_col].min(),
+            gdf[metric_col].max(),
+            len(gdf),
+            gdf[metric_col].std(),
+            gdf[metric_col].quantile(0.25),
+            gdf[metric_col].quantile(0.75)
+        ]
+    ]
 
-with gr.Blocks(
-    theme=gr.themes.Soft(
-        primary_hue="blue",
-        secondary_hue="gray",
-        neutral_hue="stone",
-        radius_size="md",
-        font=["Arial", "sans-serif"]
-    ),
-    title="U.S. Fair Market Rent Analysis Dashboard",
-    css="""
-    /* Overall container styling */
-    .gradio-container {
-        background: #f3f4f6 !important; /* Light gray background for better contrast */
-        width: 100% !important;
-        max-width: none !important;
-        margin: 0 !important;
-        padding: 2rem !important;
-        border-radius: 0 !important;
-        box-shadow: none !important;
-    }
-    
-    /* Map container */
-    .plot-container {
-        background: white !important;
-        border-radius: 8px !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-        padding: 1rem !important;
-    }
-    
-    /* Text styling */
-    .prose {
-        font-family: 'Arial', sans-serif !important;
-        line-height: 1.6 !important;
-        color: #1f2937 !important; /* Darker gray for better legibility */
-    }
-    
-    /* Control and stats panels */
-    .controls, .stats {
-        background: white !important;
-        padding: 1.5rem !important;
-        border-radius: 8px !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-        border: 1px solid #e5e7eb !important; /* Light gray border */
-    }
-    
-    /* Dropdown styling (matches screenshot) */
-    .gradio-dropdown {
-        background: white !important;
-        border: 1px solid #d1d5db !important; /* Light gray border */
-        border-radius: 4px !important;
-        font-size: 1rem !important;
-        color: #374151 !important; /* Dark gray text */
-        padding: 0.5rem 1rem !important;
-        box-shadow: none !important;
-    }
-    
-    .gradio-dropdown:hover {
-        border-color: #9ca3af !important; /* Slightly darker gray on hover */
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
-    }
-    
-    /* Accordion styling */
-    .gradio-accordion {
-        background: white !important;
-        border-radius: 8px !important;
-        border: 1px solid #e5e7eb !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-    }
-    
-    /* Stats list styling (matches screenshot) */
-    .stats-list {
-        list-style: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-    
-    .stats-list li {
-        margin-bottom: 0.75rem !important;
-        font-size: 0.95rem !important;
-        color: #4a5568 !important; /* Medium gray for values */
-        line-height: 1.5 !important;
-    }
-    
-    .stats-list li strong {
-        color: #1f2937 !important; /* Darker gray for labels */
-        font-weight: 600 !important;
-        margin-right: 0.5rem !important;
-    }
-    
-    /* Metric descriptions styling (matches screenshot) */
-    .metric-descriptions {
-        margin-top: 1rem !important;
-        padding: 1rem !important;
-        background: #f9fafb !important; /* Very light gray background */
-        border-radius: 4px !important;
-        border: 1px solid #e5e7eb !important;
-    }
-    
-    .metric-descriptions p {
-        margin: 0.5rem 0 !important;
-        font-size: 0.9rem !important;
-        color: #4a5568 !important; /* Medium gray text */
-        line-height: 1.6 !important;
-    }
-    
-    .metric-descriptions strong {
-        color: #1f2937 !important; /* Darker gray for labels */
-        font-weight: 600 !important;
-    }
-    
-    .metric-descriptions em {
-        color: #3b82f6 !important; /* Blue for emphasis, matching Gradio Soft theme */
-        font-style: italic !important;
-        font-weight: 500 !important;
-    }
-    
-    /* Header styling */
-    h1, h2, h3 {
-        font-family: 'Arial', sans-serif !important;
-        color: #1f2937 !important;
-    }
-    """
-) as app:
-    
-    gr.Markdown("""
-    <div style="text-align: center; padding: 2rem; 
-                background: #3b82f6 !important; /* Blue from Soft theme */
-                color: white;
-                margin: -2rem -2rem 2rem -2rem;
-                border-radius: 0;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);">
-        <h1 style="margin: 0; font-size: 2rem; font-weight: 700;
-                   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
-            🏘️ U.S. Fair Market Rent Analysis
-        </h1>
-        <p style="margin: 0.5rem 0 0; font-size: 1rem;
-                  opacity: 0.9;">
-            FY 2025 County-Level Housing Cost and Affordability Analysis
-        </p>
-    </div>
-    """)
+# Static table includes all metrics with their descriptions
+ALL_METRICS_DISPLAY = """
+### All Metrics
 
-    with gr.Row(equal_height=False):
-        with gr.Column(scale=1, min_width=350):  # Reduced width for compactness
-            with gr.Group(elem_classes="controls"):
-                gr.Markdown("### Dashboard Controls", elem_classes="prose")
+| Metric                      | Description                                                      |
+|-----------------------------|------------------------------------------------------------------|
+""" + "\n".join(
+    f"| **{metric}** | {METRIC_INFO[metric]['description']} |"
+    for metric in METRIC_INFO
+)
+
+theme = gr.themes.Soft(
+    primary_hue="blue",
+    secondary_hue="slate",
+    neutral_hue="slate",
+    font=("Inter", "sans-serif")
+)
+
+css = """
+.gradio-container {
+    background-color: #1a1a1a !important;
+}
+.container {
+    margin: 0 auto;
+    padding: 1rem;
+    max-width: 1400px;
+    background-color: #1a1a1a;
+    color: white;
+}
+.stats-panel, .map-container {
+    background-color: #2a2a2a !important;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    margin: 0.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+.metric-info, .all-metrics {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #333333;
+    border-radius: 0.5rem;
+    color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+.all-metrics table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.all-metrics th, .all-metrics td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #444444;
+}
+.all-metrics th {
+    background-color: #3a3a3a;
+    font-weight: bold;
+    color: #e0e0e0;
+}
+.all-metrics td {
+    color: #d0d0d0;
+}
+.dataframe {
+    background-color: #2a2a2a !important;
+    color: white !important;
+}
+.dataframe th, .dataframe td {
+    background-color: #2a2a2a !important;
+    color: white !important;
+    border: 1px solid #444444 !important;
+}
+"""
+
+with gr.Blocks(theme=theme, css=css) as app:
+    with gr.Row():
+        gr.Markdown("# U.S. Fair Market Rent Analysis", elem_classes="container")
+    
+    with gr.Row(equal_height=True):
+        with gr.Column(scale=1):
+            with gr.Group(elem_classes="stats-panel"):
                 bedroom_select = gr.Dropdown(
                     choices=["0-Bedroom", "1-Bedroom", "2-Bedroom", "3-Bedroom", "4-Bedroom"],
                     value="2-Bedroom",
-                    label="Bedroom",
-                    container=False
+                    label="Select Bedroom Size"
                 )
                 
                 metric_select = gr.Dropdown(
-                    choices=[
-                        "FMR",
-                        "Rent-to-Income Ratio",
-                        "FMR vs Median Rent Difference",
-                        "FMR Deviation from Median Rent (%)",
-                        "Affordability Gap",
-                        "Voucher Feasibility",
-                        "Cost Burden",
-                        "Severe Cost Burden",
-                        "Housing Wage"
-                    ],
-                    value="FMR vs Median Rent Difference",
-                    label="Metric",
-                    container=False
+                    choices=list(METRIC_INFO.keys()),
+                    value="FMR",
+                    label="Select Metric"
                 )
                 
-                gr.Markdown("---", elem_classes="prose")
+                metric_description = gr.Markdown(
+                    value="", 
+                    elem_classes="metric-info"
+                )
                 
-                with gr.Group(elem_classes="stats"):
-                    gr.Markdown("### Market Statistics", elem_classes="prose")
-                    stats_output = gr.HTML("""
-                    <ul class="stats-list">
-                        <li><strong>Average:</strong> -</li>
-                        <li><strong>Median:</strong> -</li>
-                        <li><strong>Minimum:</strong> -</li>
-                        <li><strong>Maximum:</strong> -</li>
-                        <li><strong>Counties:</strong> -</li>
-                        <li><strong>Std Dev:</strong> -</li>
-                        <li><strong>25th Pct:</strong> -</li>
-                        <li><strong>75th Pct:</strong> -</li>
-                    </ul>
-                    """)
-
-                gr.Markdown("---", elem_classes="prose")
+                stats_output = gr.Dataframe(
+                    headers=["Metric", "Value"],
+                    label="Statistics",
+                    interactive=False
+                )
                 
-                with gr.Accordion("Metric Descriptions", open=False):
-                    gr.HTML("""
-                    <div class="metric-descriptions">
-                        <p><strong>FMR:</strong> Fair Market Rent set by HUD for different bedroom sizes ($). <em>Neutral - depends on context.</em></p>
-                        <p><strong>Rent-to-Income Ratio:</strong> Annual FMR as a percentage of median household income (%). <em>Lower is better (less burden).</em></p>
-                        <p><strong>FMR vs Median Rent Difference:</strong> Dollar difference between FMR and median gross rent ($). <em>Higher is better (FMR exceeds market rent).</em></p>
-                        <p><strong>FMR Deviation from Median Rent (%):</strong> Percentage difference between FMR and median gross rent (%). <em>Higher is better (FMR exceeds market rent).</em></p>
-                        <p><strong>Affordability Gap:</strong> Excess annual rent over 30% of median household income ($). <em>Lower is better (less unaffordable). Areas with no gap are excluded.</em></p>
-                        <p><strong>Voucher Feasibility:</strong> FMR as a percentage of median gross rent, indicating voucher effectiveness (%). <em>Higher is better (vouchers cover more rent).</em></p>
-                        <p><strong>Cost Burden:</strong> Percentage of renters spending more than 30% of income on rent (%). <em>Lower is better (fewer burdened renters).</em></p>
-                        <p><strong>Severe Cost Burden:</strong> Percentage of renters spending more than 50% of income on rent (%). <em>Lower is better (fewer severely burdened).</em></p>
-                        <p><strong>Housing Wage:</strong> Hourly wage needed to afford the selected bedroom FMR at 30% of income ($/hr). <em>Lower is better (more affordable).</em></p>
-                    </div>
-                    """)
+                gr.Markdown(
+                    ALL_METRICS_DISPLAY,
+                    elem_classes="all-metrics"
+                )
 
         with gr.Column(scale=2):
-            with gr.Group(elem_classes="plot-container"):
-                map_title = gr.Markdown("## FMR vs Median Rent Difference Distribution - 2-Bedroom Units",
-                                      elem_classes="prose")
-                map_output = gr.Plot(label="", scale=1)
+            with gr.Group(elem_classes="map-container"):
+                map_output = gr.Plot()
 
-    gr.Markdown("""
-    <div style="text-align: center; padding: 1rem; 
-                color: #4a5568;
-                font-size: 0.9rem;
-                margin-top: 2rem;
-                background: #f9fafb;
-                border-radius: 8px;
-                border: 1px solid #e5e7eb;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);">
-        Source: U.S. Department of Housing and Urban Development (HUD) FY 2025 Fair Market Rent Data
-    </div>
-    """, elem_classes="prose")
-
-    def update_all(bedroom_type, metric_type):
+    def update_display(bedroom_type, metric_type):
         stats = get_stats(bedroom_type, metric_type)
-        title = f"## {metric_type} Distribution - {bedroom_type} Units"
-        stats_html = f"""
-        <ul class="stats-list">
-            <li><strong>Average:</strong> {stats[0]}</li>
-            <li><strong>Median:</strong> {stats[1]}</li>
-            <li><strong>Minimum:</strong> {stats[2]}</li>
-            <li><strong>Maximum:</strong> {stats[3]}</li>
-            <li><strong>Counties:</strong> {stats[4]}</li>
-            <li><strong>Std Dev:</strong> {stats[5]}</li>
-            <li><strong>25th Pct:</strong> {stats[6]}</li>
-            <li><strong>75th Pct:</strong> {stats[7]}</li>
-        </ul>
-        """
+        stats_data = [
+            ["Mean", stats[0]],
+            ["Median", stats[1]],
+            ["Minimum", stats[2]],
+            ["Maximum", stats[3]],
+            ["Counties", stats[4]],
+            ["Std Dev", stats[5]],
+            ["25th Percentile", stats[6]],
+            ["75th Percentile", stats[7]]
+        ]
+        description = f"**{metric_type}**: {METRIC_INFO[metric_type]['description']}"
         return (
             create_map(bedroom_type, metric_type),
-            title,
-            stats_html
+            stats_data,
+            description
         )
 
     bedroom_select.change(
-        update_all,
+        update_display,
         inputs=[bedroom_select, metric_select],
-        outputs=[map_output, map_title, stats_output]
+        outputs=[map_output, stats_output, metric_description]
     )
     
     metric_select.change(
-        update_all,
+        update_display,
         inputs=[bedroom_select, metric_select],
-        outputs=[map_output, map_title, stats_output]
+        outputs=[map_output, stats_output, metric_description]
     )
 
     app.load(
-        lambda: update_all("2-Bedroom", "FMR vs Median Rent Difference"),
-        outputs=[map_output, map_title, stats_output]
+        fn=lambda: update_display("2-Bedroom", "FMR"),
+        outputs=[map_output, stats_output, metric_description]
     )
 
 if __name__ == "__main__":
-    app.launch(server_port=2001, share=True)
+    app.launch()
